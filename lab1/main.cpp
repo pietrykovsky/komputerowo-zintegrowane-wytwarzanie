@@ -160,6 +160,33 @@ void printExecutionTime(std::chrono::milliseconds duration)
     std::cout << "\nExecution time: " << seconds << " seconds " << milliseconds << " milliseconds" << std::endl;
 }
 
+int calculateCmax(const Task* scheduledTasks, int numberOfTasks) {
+    int currentTime = 0;
+    int cmax = 0;
+
+    for (int i = 0; i < numberOfTasks; ++i) {
+        const Task& task = scheduledTasks[i];
+        
+        int startTime = std::max(currentTime, task.preparationTime);
+        int finishTime = startTime + task.executionTime + task.deliveryTime;
+        currentTime = startTime + task.executionTime;
+        
+        cmax = std::max(cmax, finishTime);
+    }
+
+    return cmax;
+}
+
+std::string getTotalCmax(int* cmaxData, int dataFilesCount) 
+{
+    int totalCmax = 0;
+    for (int i = 0; i < dataFilesCount; ++i) 
+    {
+        totalCmax += cmaxData[i];
+    }
+    return std::to_string(totalCmax);
+}
+
 int main() 
 {
     auto start = std::chrono::high_resolution_clock::now();
@@ -167,6 +194,7 @@ int main()
     const int DATA_FILES_COUNT = 4;
     const std::string DATA_DIR_PATH = "data/";
     Data* data = loadDataFiles(DATA_DIR_PATH, DATA_FILES_COUNT);
+    int* cmaxData = new int[DATA_FILES_COUNT];
     for (int i = 0; i<DATA_FILES_COUNT; i++)
     {
         std::cout << "\nData file " << i+1 << ":\n";
@@ -175,7 +203,12 @@ int main()
         std::cout << "\nScheduled tasks for data file " << i+1 << ":\n";
         auto scheduledTasks = schrageSchedule(data[i].tasks, data[i].numberOfTasks);
         std::cout << getScheduledTasksSequence(scheduledTasks, data[i].numberOfTasks) << std::endl;
+
+        auto cmax = calculateCmax(scheduledTasks, data[i].numberOfTasks);
+        cmaxData[i] = cmax;
+        std::cout << "Cmax = " << cmax << std::endl;
     }
+    std::cout << "\nTotal Cmax: " << getTotalCmax(cmaxData, DATA_FILES_COUNT) << std::endl;
     
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
