@@ -88,6 +88,67 @@ Task* sortRSchedule(Task* tasks, int numberOfTasks)
     return scheduledTasks;
 }
 
+
+Task* insertLongestPrepTime(Task* tasks, int numberOfTasks) { //only for data2
+    Task* scheduledTasks = new Task[numberOfTasks];
+    std::vector<Task> tasksVec(tasks, tasks + numberOfTasks);
+    int currentTime = 0;
+    int scheduledCount = 0;
+
+    auto compareByPreparationTime = [](const Task& a, const Task& b) {
+        return a.preparationTime < b.preparationTime; // Ascending order for preparation time
+    };
+
+    auto compareByExecutionTime = [](const Task& a, const Task& b) {
+        return a.executionTime < b.executionTime; // Ascending order for execution time
+    };
+
+    // Sort tasks by preparation time
+    std::sort(tasksVec.begin(), tasksVec.end(), compareByPreparationTime);
+
+    // Copy tasks sorted by preparation time into scheduledTasks
+    for (const Task& task : tasksVec) {
+        scheduledTasks[scheduledCount++] = task;
+    }
+
+    // Find task with the longest preparation time
+    auto itHighestPreparationTime = std::max_element(tasksVec.begin(), tasksVec.end(),
+        [](const Task& a, const Task& b) { return a.preparationTime < b.preparationTime; });
+
+    if (itHighestPreparationTime != tasksVec.end()) {
+        Task taskWithHighestPreparationTime = *itHighestPreparationTime;
+
+        // Find the sum of execution times closest to the highest preparation time
+        int closestExecutionSum = 0;
+        int minDiff = INT_MAX;
+        int count = 0;
+
+        for (const Task& task : tasksVec) {
+            int diff = std::abs(closestExecutionSum - taskWithHighestPreparationTime.preparationTime);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestExecutionSum = closestExecutionSum+task.executionTime;
+                count++;
+            }
+        }
+
+        // Find the index where to insert the task with the highest preparation time
+        int insertionIndex = count;
+
+        // Shift elements in scheduledTasks to make space for the task with highest preparation time
+        for (int i = scheduledCount; i > insertionIndex; --i) {
+            scheduledTasks[i] = scheduledTasks[i - 1];
+        }
+
+        // Insert the task with the highest preparation time
+        scheduledTasks[insertionIndex] = taskWithHighestPreparationTime;
+    }
+
+    return scheduledTasks;
+}
+
+
+
 Task* schrageSchedule(Task* tasks, int numberOfTasks) {
     Task* scheduledTasks = new Task[numberOfTasks];
     std::vector<Task> tasksVec(tasks, tasks + numberOfTasks);
@@ -150,6 +211,7 @@ std::string getScheduledTasksSequence(const Task* scheduledTasks, int numberOfTa
     return solution;
 }
 
+
 void printExecutionTime(std::chrono::milliseconds duration)
 {
     auto milliseconds = duration.count();
@@ -201,7 +263,7 @@ int main()
         printTaskArray(data[i].tasks, data[i].numberOfTasks);
         
         std::cout << "\nScheduled tasks for data file " << i+1 << ":\n";
-        auto scheduledTasks = schrageSchedule(data[i].tasks, data[i].numberOfTasks);
+        auto scheduledTasks = insertLongestPrepTime(data[i].tasks, data[i].numberOfTasks);
         std::cout << getScheduledTasksSequence(scheduledTasks, data[i].numberOfTasks) << std::endl;
 
         auto cmax = calculateCmax(scheduledTasks, data[i].numberOfTasks);
@@ -215,3 +277,10 @@ int main()
     printExecutionTime(duration);
     return 0;
 }
+
+
+//sprawko - opis problemu + oznaczenia??? żebyśmy stosowali jeden typ oznaczeń
+//struktury danych - jak dane rozw jest zaimplementowane w kodzie xd?
+//algorytmy jakie zastosowaliśmy 
+//testy
+//tabela z wynikami
