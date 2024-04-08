@@ -4,6 +4,7 @@ Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
 ehthumbs_vista.db
+CppProperties.json
 
 # Dump file
 *.stackdump
