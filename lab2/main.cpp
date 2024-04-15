@@ -145,6 +145,24 @@ Data createDataset(std::istream& in, int id, int numberOfTasks)
     return dataset;
 }
 
+int calculatePenalty(const Task& task) 
+{
+    int delay = task.completionTime - task.executionTime;
+    if (delay > 0) {
+        return delay * task.penaltyWeight;
+    }
+    return 0;
+}
+
+int calculateTotalPenalty(const Data& dataset) 
+{
+    int totalPenalty = 0;
+    for (int i = 0; i < dataset.numberOfTasks; ++i) {
+        totalPenalty += calculatePenalty(dataset.tasks[i]);
+    }
+    return totalPenalty;
+}
+
 
 int main() 
 {
@@ -153,11 +171,13 @@ int main()
     const std::string DATA_PATH = "data.txt";
     std::list<Data> datasets = *loadDataFile(DATA_PATH);
     
-    for (auto dataset = datasets.begin(); dataset != datasets.end(); ++dataset) 
+    for (auto& dataset : datasets) 
     {
-        std::cout << "\nDataset " << dataset->id << ":\n";
-        printTaskArray(dataset->tasks, dataset->numberOfTasks);
-        printOptimalResult(dataset->optimalResult);
+        std::cout << "\nDataset " << dataset.id << ":\n";
+        printTaskArray(dataset.tasks, dataset.numberOfTasks);
+        int totalPenalty = calculateTotalPenalty(dataset);
+        std::cout << "Total Penalty: " << totalPenalty << std::endl;
+        printOptimalResult(dataset.optimalResult);
     }
     
     auto stop = std::chrono::high_resolution_clock::now();
