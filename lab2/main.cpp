@@ -4,6 +4,7 @@
 #include <list>
 #include <chrono>
 #include <sstream>
+#include <vector>
 
 /*
 1 maszyna
@@ -163,9 +164,72 @@ int calculateTotalPenalty(const Data& dataset)
     return totalPenalty;
 }
 
+struct TaskInfo {
+    int prevIndex;
+    int minCost;
+};
 
-int main() 
-{
+Result dynamicProgramming(const std::list<Task>& tasks) {
+    int n = tasks.size();
+    std::vector<Task> taskVec(tasks.begin(), tasks.end());
+    
+    std::vector<TaskInfo> v(n + 1); //minimalne koszty oraz indeksy poprzednich zadań
+    std::vector<int> F(n + 1, 0); // minimalne koszty każdego zadania
+    std::vector<int> pi(n + 1); //optymalne rozwiązanie
+    
+    int index = 1;
+    
+    for (const auto& task : tasks) {
+    int minIndex = -1;
+    int minCost = std::numeric_limits<int>::max();
+    
+    for (const auto& prevTask : tasks) {
+        int newCost = F[prevTask.id] + prevTask.penaltyWeight * (task.completionTime - task.executionTime);
+        if (newCost < minCost || (newCost == minCost && prevTask.id < minIndex)) {
+            minCost = newCost;
+            minIndex = prevTask.id;
+        }
+    }
+    
+    v[task.id].prevIndex = minIndex;
+    v[task.id].minCost = minCost;
+    F[task.id] = minCost;
+}
+    // for (const auto& task : taskVec) { //dla każdego zadania z taska
+    //     int minIndex = -1;
+    //     int minCost = std::numeric_limits<int>::max(); // maxint
+        
+    //     for (int j = 0; j < index; ++j) { // bierzemy 1 zadanie to leci raz, koszt zadania się oblicza
+    //         int newCost = F[j] + task.penaltyWeight * (task.completionTime - task.executionTime);
+    //         if (newCost < minCost) { // jeżeli nowy koszt zadania jest mniejszy niż poprzedni minimalny koszt to zamieniamy 
+    //             minCost = newCost;
+    //             minIndex = j; //ustawiamy też minimalny index na ten który ma minimalny koszt
+    //         }
+    //     }
+        
+    //     v[index].prevIndex = minIndex; // przypisujemy to jako poprzedni index ( tylko nie wiem czy minIndex jest tu dobry)
+    //     v[index].minCost = minCost; //minimalny koszt przypisujemy 
+    //     F[index] = F[minIndex] + task.penaltyWeight * (task.completionTime - task.executionTime); //do tablicy którą będziemy wykorzystywać przypisujemy sam koszt 
+    //     ++index; // iterujemy 
+    // }
+    
+    int i = n;
+    while (i > 0) {
+        pi[i] = v[i].prevIndex;
+        std::cout<<v[i].prevIndex <<"_";
+        std::cout<< i <<std::endl;
+        --i;
+    }
+    
+    std::string taskSequence;
+    for (int j = 1; j <= n; ++j) {
+        taskSequence += std::to_string(pi[j]) + " ";
+    }
+    
+    return {F[n], taskSequence};
+}
+
+int main() {
     auto start = std::chrono::high_resolution_clock::now();
 
     const std::string DATA_PATH = "data.txt";
@@ -174,10 +238,8 @@ int main()
     for (auto& dataset : datasets) 
     {
         std::cout << "\nDataset " << dataset.id << ":\n";
-        printTaskArray(dataset.tasks, dataset.numberOfTasks);
-        int totalPenalty = calculateTotalPenalty(dataset);
-        std::cout << "Total Penalty: " << totalPenalty << std::endl;
-        printOptimalResult(dataset.optimalResult);
+        Result result = dynamicProgramming(std::list<Task>(dataset.tasks, dataset.tasks + dataset.numberOfTasks));
+        std::cout << "Optimal Result:\nTime = " << result.time << ", Task Sequence = " << result.taskSequence << std::endl;
     }
     
     auto stop = std::chrono::high_resolution_clock::now();
@@ -185,3 +247,5 @@ int main()
     printExecutionTime(duration);
     return 0;
 }
+
+
