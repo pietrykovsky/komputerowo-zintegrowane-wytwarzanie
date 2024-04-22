@@ -6,18 +6,6 @@
 #include <sstream>
 #include <vector>
 
-/*
-1 maszyna
-n zadan
-czas produkcji | waga kary | czas wymaganej daty
-
-to do:
-- napisanie funkcji obliczajacej kare:
-kara = opoznienie * waga kary
-opoznienie - czas zakonczenia - czas wymaganej daty
-- napisanie funkcji obliczajacej calkowita kare w datasecie
-*/
-
 struct Task
 {
     int id;
@@ -70,9 +58,9 @@ void printExecutionTime(std::chrono::milliseconds duration)
     std::cout << "\nExecution time: " << seconds << " seconds " << milliseconds << " milliseconds" << std::endl;
 }
 
-void printOptimalResult(const Result& result) 
+void printResult(const Result& result) 
 {
-    std::cout << "\nOptimal Result:\nTime = " << result.time << ", Task Sequence = " << result.taskSequence << std::endl;
+    std::cout << "Result:\nTime = " << result.time << ", Task Sequence = " << result.taskSequence << std::endl;
 }
 
 std::list<Data>* loadDataFile(std::string filePath) 
@@ -104,7 +92,8 @@ Task readTask(std::istream& in)
     return task;
 }
 
-Result readOptimalResult(std::istream& in) {
+Result readOptimalResult(std::istream& in) 
+{
     Result result;
     std::string line;
 
@@ -149,7 +138,8 @@ Data createDataset(std::istream& in, int id, int numberOfTasks)
 int calculatePenalty(const Task& task) 
 {
     int delay = task.completionTime - task.executionTime;
-    if (delay > 0) {
+    if (delay > 0) 
+    {
         return delay * task.penaltyWeight;
     }
     return 0;
@@ -158,78 +148,84 @@ int calculatePenalty(const Task& task)
 int calculateTotalPenalty(const Data& dataset) 
 {
     int totalPenalty = 0;
-    for (int i = 0; i < dataset.numberOfTasks; ++i) {
+    for (int i = 0; i < dataset.numberOfTasks; ++i) 
+    {
         totalPenalty += calculatePenalty(dataset.tasks[i]);
     }
     return totalPenalty;
 }
 
-struct TaskInfo {
-    int prevIndex;
-    int minCost;
-};
+Result scheduleTasks(const Task* tasks, int numberOfTasks) 
+{
+    // Convert array to vector for easier manipulation
+    std::vector<Task> taskVector(tasks, tasks + numberOfTasks);
+    
+    // Sort tasks based on a heuristic, smallest penalty weight or other criteria could be considered
+    std::sort(taskVector.begin(), taskVector.end(), [](const Task& a, const Task& b) 
+    {
+        return a.completionTime < b.completionTime; // Earliest due date first
+    });
 
-Result dynamicProgramming(const std::list<Task>& tasks) {
-    int n = tasks.size();
-    std::vector<Task> taskVec(tasks.begin(), tasks.end());
-    
-    std::vector<TaskInfo> v(n + 1); //minimalne koszty oraz indeksy poprzednich zadań
-    std::vector<int> F(n + 1, 0); // minimalne koszty każdego zadania
-    std::vector<int> pi(n + 1); //optymalne rozwiązanie
-    
-    int index = 1;
-    
-    for (const auto& task : tasks) {
-    int minIndex = -1;
-    int minCost = std::numeric_limits<int>::max();
-    
-    for (const auto& prevTask : tasks) {
-        int newCost = F[prevTask.id] + prevTask.penaltyWeight * (task.completionTime - task.executionTime);
-        if (newCost < minCost || (newCost == minCost && prevTask.id < minIndex)) {
-            minCost = newCost;
-            minIndex = prevTask.id;
+    int n = taskVector.size();
+    std::vector<int> dp(1 << n, INT_MAX); // DP array to store minimum penalty for each subset of tasks
+    dp[0] = 0; // Base case: no tasks scheduled, no penalty
+    std::vector<int> lastTask(1 << n, -1); // To track the last task in optimal sequence
+
+    // Iterate over each subset of tasks
+    for (int mask = 0; mask < (1 << n); ++mask) 
+    {
+        if (dp[mask] == INT_MAX) continue; // Skip infeasible states
+
+        int currentTime = 0; // Current time is the sum of execution times of tasks in the current subset
+        for (int i = 0; i < n; ++i) 
+        {
+            if (mask & (1 << i)) 
+            {
+                currentTime += taskVector[i].executionTime;
+            }
+        }
+
+        // Consider adding each task not yet in the subset
+        for (int i = 0; i < n; ++i) 
+        {
+            if (!(mask & (1 << i))) 
+            {
+                int nextMask = mask | (1 << i);
+                int finishTime = currentTime + taskVector[i].executionTime;
+                int tardiness = std::max(0, finishTime - taskVector[i].completionTime);
+                int penalty = tardiness * taskVector[i].penaltyWeight;
+
+                if (dp[nextMask] > dp[mask] + penalty) {
+                    dp[nextMask] = dp[mask] + penalty;
+                    lastTask[nextMask] = i;
+                }
+            }
         }
     }
-    
-    v[task.id].prevIndex = minIndex;
-    v[task.id].minCost = minCost;
-    F[task.id] = minCost;
-}
-    // for (const auto& task : taskVec) { //dla każdego zadania z taska
-    //     int minIndex = -1;
-    //     int minCost = std::numeric_limits<int>::max(); // maxint
-        
-    //     for (int j = 0; j < index; ++j) { // bierzemy 1 zadanie to leci raz, koszt zadania się oblicza
-    //         int newCost = F[j] + task.penaltyWeight * (task.completionTime - task.executionTime);
-    //         if (newCost < minCost) { // jeżeli nowy koszt zadania jest mniejszy niż poprzedni minimalny koszt to zamieniamy 
-    //             minCost = newCost;
-    //             minIndex = j; //ustawiamy też minimalny index na ten który ma minimalny koszt
-    //         }
-    //     }
-        
-    //     v[index].prevIndex = minIndex; // przypisujemy to jako poprzedni index ( tylko nie wiem czy minIndex jest tu dobry)
-    //     v[index].minCost = minCost; //minimalny koszt przypisujemy 
-    //     F[index] = F[minIndex] + task.penaltyWeight * (task.completionTime - task.executionTime); //do tablicy którą będziemy wykorzystywać przypisujemy sam koszt 
-    //     ++index; // iterujemy 
-    // }
-    
-    int i = n;
-    while (i > 0) {
-        pi[i] = v[i].prevIndex;
-        std::cout<<v[i].prevIndex <<"_";
-        std::cout<< i <<std::endl;
-        --i;
+
+    // Reconstruct the optimal task sequence using `lastTask`
+    std::vector<int> sequence;
+    int currentMask = (1 << n) - 1;
+    while (currentMask) 
+    {
+        int taskIdx = lastTask[currentMask];
+        sequence.push_back(taskVector[taskIdx].id);
+        currentMask &= ~(1 << taskIdx); // Remove the last task added from currentMask
     }
-    
-    std::string taskSequence;
-    for (int j = 1; j <= n; ++j) {
-        taskSequence += std::to_string(pi[j]) + " ";
+    std::reverse(sequence.begin(), sequence.end()); // Reverse to get the order from start to finish
+
+    // Convert task sequence to string
+    std::stringstream ss;
+    for (int id : sequence) 
+    {
+        ss << id << " ";
     }
-    
-    return {F[n], taskSequence};
+
+    return {dp[(1 << n) - 1], ss.str().substr(0, ss.str().size() - 1)}; // Remove the last space
 }
 
-int main() {
+int main() 
+{
     auto start = std::chrono::high_resolution_clock::now();
 
     const std::string DATA_PATH = "data.txt";
@@ -238,8 +234,14 @@ int main() {
     for (auto& dataset : datasets) 
     {
         std::cout << "\nDataset " << dataset.id << ":\n";
-        Result result = dynamicProgramming(std::list<Task>(dataset.tasks, dataset.tasks + dataset.numberOfTasks));
-        std::cout << "Optimal Result:\nTime = " << result.time << ", Task Sequence = " << result.taskSequence << std::endl;
+        printTaskArray(dataset.tasks, dataset.numberOfTasks);
+        int totalPenalty = calculateTotalPenalty(dataset);
+        std::cout << "Total Penalty: " << totalPenalty << std::endl;
+        std::cout << "Optimal ";
+        printResult(dataset.optimalResult);
+        std::cout << "Received ";
+        Result result = scheduleTasks(dataset.tasks, dataset.numberOfTasks);
+        printResult(result);
     }
     
     auto stop = std::chrono::high_resolution_clock::now();
@@ -247,5 +249,3 @@ int main() {
     printExecutionTime(duration);
     return 0;
 }
-
-
