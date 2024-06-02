@@ -1,204 +1,256 @@
 #include <iostream>
 #include <fstream>
-#include <string>
 #include <vector>
 #include <sstream>
-#include <limits>
+#include <string>
 #include <algorithm>
-#include <numeric>
+#include <chrono>
+#include <limits>
 
-struct Task {
-    int id;
-    std::vector<int> processingTimes;
+using namespace std;
+
+struct Job {
+    int jobId;
+    vector<int> processingTimes;
+    int totalProcessingTime;
 };
 
-struct Result {
-    int optimalTime;
-    std::string optimalSequence;
-};
+vector<int> sortJobsByTotalTime(const vector<Job>& jobs) {
+    vector<Job> sortedJobs = jobs;
+    stable_sort(sortedJobs.begin(), sortedJobs.end(), [](const Job& a, const Job& b) {
+        return a.totalProcessingTime > b.totalProcessingTime;
+    });
 
-struct Data {
-    int id;
-    int numberOfTasks;
-    int numberOfMachines;
-    std::vector<Task> tasks;
-    Result result;
-};
+    vector<int> jobOrder;
 
-Task readTask(std::istream& in, int taskID, int numMachines) {
-    Task task;
-    task.id = taskID;
-    int time;
-    for (int i = 0; i < numMachines; ++i) {
-        in >> time;
-        task.processingTimes.push_back(time);
-    }
-    return task;
+    transform(sortedJobs.begin(), sortedJobs.end(), back_inserter(jobOrder), [](const Job& job) {
+        return job.jobId - 1;
+    });
+
+    return jobOrder;
 }
 
-Result readOptimalResult(std::istream& in) 
-{
-    Result result;
-    std::string line;
-
-    std::getline(in, line);
-    std::istringstream optStream(line);
-    optStream >> result.optimalTime;
-
-    std::getline(in, result.optimalSequence);
-
-    return result;
-}
-
-std::vector<Data> loadDataFromFile(const std::string& filePath) {
-    std::vector<Data> datasets;
-    std::ifstream file(filePath);
-    std::string line;
-    int datasetID = 0;
-
-    while (getline(file, line)) {
-        if (line.find("data.") != std::string::npos) {
-            Data dataset;
-            dataset.id = ++datasetID;
-            file >> dataset.numberOfTasks >> dataset.numberOfMachines;
-
-            dataset.tasks.reserve(dataset.numberOfTasks);
-            for (int i = 0; i < dataset.numberOfTasks; ++i) {
-                Task task = readTask(file, i + 1, dataset.numberOfMachines);
-                dataset.tasks.push_back(task);
-            }
-
-            std::string dummyLine = "";
-            while (dummyLine.find("neh:") == std::string::npos) 
-            {
-                std::getline(file, dummyLine);
-            }
-            dataset.result = readOptimalResult(file);
-            datasets.push_back(dataset);
-
-            file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        }
-    }
-    return datasets;
-}
-
-std::vector<int> extract_column(const std::vector<std::vector<int>>& matrix, int col) {
-    std::vector<int> column(matrix.size());
-    for (size_t i = 0; i < matrix.size(); ++i) {
+vector<int> extractColumn(const vector<vector<int>>& matrix, int col) {
+    int rows = matrix.size();
+    vector<int> column(rows, 0);
+    for (int i = 0; i < rows; ++i){
         column[i] = matrix[i][col];
     }
     return column;
 }
 
-void forward_propagate(std::vector<std::vector<int>>& times) {
-    for (size_t i = 1; i < times.size(); ++i) {
-        for (size_t j = 1; j < times[i].size(); ++j) {
-            times[i][j] += std::max(times[i-1][j], times[i][j-1]);
+void forwardPropagation(const vector<Job>& jobs, const vector<int>& jobOrder, vector<vector<int>>& forwardMatrix, int start = 0) {
+    int machines = jobs[0].processingTimes.size();
+    vector<int> previous(machines, 0);
+    if (start != 0){
+        previous = extractColumn(forwardMatrix, jobOrder[start-1]);
+    }
+    for (int i = start; i < jobOrder.size(); i++) {
+        int time = 0;
+        for (int m = 0; m < machines; m++) {
+            time = max(time, previous[m]) + jobs[jobOrder[i]].processingTimes[m];
+            forwardMatrix[m][jobOrder[i]] = time;
+            previous[m] = time;
         }
     }
 }
 
-void backward_propagate(std::vector<std::vector<int>>& times) {
-    for (int i = times.size() - 2; i >= 0; --i) {
-        for (int j = times[i].size() - 2; j >= 0; --j) {
-            times[i][j] += std::max(times[i+1][j], times[i][j+1]);
+void backwardPropagation(const vector<Job>& jobs, const vector<int>& jobOrder, vector<vector<int>>& backwardMatrix, int start = -1) {
+    if (jobOrder.size() == 0) {
+        return;
+    }
+    int machines = jobs[0].processingTimes.size();
+    vector<int> previous(machines, 0);
+    if (start != jobOrder.size()-1){
+        previous = extractColumn(backwardMatrix, jobOrder[start+1]);
+    }
+    for (int i = start; i >= 0; i--) {
+        int time = 0;
+        for (int m = machines-1; m >= 0; m--) {
+            time = max(time, previous[m]) + jobs[jobOrder[i]].processingTimes[m];
+            backwardMatrix[m][jobOrder[i]] = time;
+            previous[m] = time;
         }
     }
 }
 
-int calculateCmax(const std::vector<std::vector<int>>& processing_times, const std::vector<int>& order) {
-    int num_tasks = processing_times.size();
-    int num_machines = processing_times[0].size();
-    std::vector<std::vector<int>> times(num_tasks, std::vector<int>(num_machines, 0));
-
-    for (size_t i = 0; i < order.size(); ++i) {
-        int task_idx = order[i] - 1;
-        for (int j = 0; j < num_machines; ++j) {
-            if (i == 0 && j == 0) {
-                times[i][j] = processing_times[task_idx][j];
-            } else if (i == 0) {
-                times[i][j] = times[i][j-1] + processing_times[task_idx][j];
-            } else if (j == 0) {
-                times[i][j] = times[i-1][j] + processing_times[task_idx][j];
-            } else {
-                times[i][j] = std::max(times[i-1][j], times[i][j-1]) + processing_times[task_idx][j];
+int computeCmax(const Job& job, const vector<vector<int>>& forwardMatrix, const vector<vector<int>>& backwardMatrix, int pos, const vector<int>& jobOrder) {
+    int time = 0;
+    int cmax = 0;
+    int totalJobs = jobOrder.size();
+    int machines = job.processingTimes.size();
+    vector<int> jobTimes(machines, 0);
+    vector<int> previous;
+    if (pos != 0){
+        previous = extractColumn(forwardMatrix, jobOrder[pos-1]);
+    } else {
+        previous = vector<int>(machines, 0);
+    }
+    for (int m = 0; m < machines; m++) {
+        time = max(time, previous[m]) + job.processingTimes[m];
+        jobTimes[m] = time;
+        if (pos < totalJobs) {
+            int value = jobTimes[m] + backwardMatrix[m][jobOrder[pos]];
+            if (value > cmax){
+                cmax = value;
             }
         }
     }
-
-    forward_propagate(times);
-    backward_propagate(times);
-    return times[num_tasks-1][num_machines-1];
+    if (pos == totalJobs){
+        return time;
+    } 
+    return cmax; 
 }
 
-std::vector<int> sort_tasks(const std::vector<Task>& tasks) {
-    std::vector<int> order(tasks.size());
-    for (size_t i = 0; i < tasks.size(); ++i) {
-        order[i] = tasks[i].id;
-    }
-    std::sort(order.begin(), order.end(), [&tasks](int a, int b) {
-        int sumA = std::accumulate(tasks[a-1].processingTimes.begin(), tasks[a-1].processingTimes.end(), 0);
-        int sumB = std::accumulate(tasks[b-1].processingTimes.begin(), tasks[b-1].processingTimes.end(), 0);
-        return sumA > sumB;
-    });
-    return order;
-}
+vector<int> optimizedNEH(const vector<Job>& jobs) {
+    vector<int> initialOrder = sortJobsByTotalTime(jobs);
+    vector<int> finalOrder;
+    int totalJobs = jobs.size();
+    int machines = jobs[0].processingTimes.size();
+    int bestPos = 0;
+    vector<vector<int>> forwardMatrix(machines, vector<int>(totalJobs, 0));
+    vector<vector<int>> backwardMatrix(machines, vector<int>(totalJobs, 0)); 
 
-std::vector<int> accelerated_qneh(const std::vector<Task>& tasks) {
-    std::vector<int> order = sort_tasks(tasks);
-    std::vector<int> optimal_order;
-
-    for (size_t i = 0; i < order.size(); ++i) {
-        int best_Cmax = std::numeric_limits<int>::max();
-        size_t best_pos = 0;
-
-        for (size_t j = 0; j <= optimal_order.size(); ++j) {
-            std::vector<int> temp_order = optimal_order;
-            temp_order.insert(temp_order.begin() + j, order[i]);
-            std::vector<std::vector<int>> processing_times(tasks.size(), std::vector<int>(tasks[0].processingTimes.size()));
-            for (size_t k = 0; k < tasks.size(); ++k) {
-                processing_times[k] = tasks[k].processingTimes;
-            }
-            int Cmax = calculateCmax(processing_times, temp_order);
-            if (Cmax < best_Cmax) {
-                best_Cmax = Cmax;
-                best_pos = j;
+    for (int jobIndex : initialOrder) {
+        int currentJobs = finalOrder.size();
+        int minCmax = numeric_limits<int>::max();
+        forwardPropagation(jobs, finalOrder, forwardMatrix, bestPos);
+        backwardPropagation(jobs, finalOrder, backwardMatrix, bestPos);
+        for (int i = 0; i < currentJobs + 1; i++){
+            int c = computeCmax(jobs[jobIndex], forwardMatrix, backwardMatrix, i, finalOrder);
+            if (c < minCmax) {
+                minCmax = c;
+                bestPos = i;
             }
         }
-
-        optimal_order.insert(optimal_order.begin() + best_pos, order[i]);
+        finalOrder.insert(finalOrder.begin() + bestPos, jobIndex);
     }
+    return finalOrder;
+}
 
-    return optimal_order;
+int computeFinalCmax(const vector<Job>& jobs, const vector<int>& jobOrder) {
+    int machines = jobs[0].processingTimes.size();
+    int cmax = 0;
+    vector<int> previous(machines, 0);
+    for (int jobIndex : jobOrder) {
+        int time = 0;
+        for (int m = 0; m < machines; m++) {
+            time = max(time, previous[m]) + jobs[jobIndex].processingTimes[m];
+            previous[m] = time;
+            cmax = time;
+        }
+    }
+    return cmax;
+}
+
+vector<int> basicNEH(const vector<Job>& jobs) {
+    vector<int> initialOrder = sortJobsByTotalTime(jobs);
+    vector<int> finalOrder;
+    int totalJobs = jobs.size();
+    int machines = jobs[0].processingTimes.size();
+    int bestPos = 0;
+
+    for (int jobIndex : initialOrder) {
+        int currentJobs = finalOrder.size();
+        int minCmax = numeric_limits<int>::max();
+        for (int i = 0; i < currentJobs + 1; i++) {
+            vector<int> newOrder = finalOrder;
+            newOrder.insert(newOrder.begin() + i, jobIndex);
+            int c = computeFinalCmax(jobs, newOrder);
+            if (c < minCmax) {
+                minCmax = c;
+                bestPos = i;
+            }
+        }
+        finalOrder.insert(finalOrder.begin() + bestPos, jobIndex);
+    }
+    return finalOrder;
 }
 
 int main() {
-    const std::string filePath = "neh.data.txt";
-    std::vector<Data> datasets = loadDataFromFile(filePath);
+    string filePath = "neh.data.txt";
+    ifstream file(filePath);
+    vector<vector<Job>> allDatasets;
+    string line;
 
-    for (const auto& dataset : datasets) {
-        std::cout << "Dataset " << dataset.id << ":\n";
-        std::cout << "Optimal Time: " << dataset.result.optimalTime << "\n";
-        std::cout << "Optimal Sequence: ";
-        for (auto task : dataset.result.optimalSequence) {
-            std::cout << task << " ";
-        }
-        std::cout << "\n";
-
-        std::vector<int> order = accelerated_qneh(dataset.tasks);
-        std::cout << "QNEH Order: ";
-        for (int task : order) {
-            std::cout << task << " ";
-        }
-        std::cout << "\n";
-
-        std::vector<std::vector<int>> processing_times(dataset.tasks.size(), std::vector<int>(dataset.tasks[0].processingTimes.size()));
-        for (size_t i = 0; i < dataset.tasks.size(); ++i) {
-            processing_times[i] = dataset.tasks[i].processingTimes;
-        }
-        int qneh_time = calculateCmax(processing_times, order);
-        std::cout << "QNEH Optimal Time: " << qneh_time << "\n";
+    if (!file.is_open()) {
+        cerr << "Failed to open file: " << filePath << endl;
+        return 1;
     }
+
+    vector<Job> currentDataset;
+    bool isSavingData = false;
+    int taskCounter = 0;
+
+    while (getline(file, line)) {
+        if (line.empty()) {
+            isSavingData = false;
+            if (!currentDataset.empty()) {
+                allDatasets.push_back(currentDataset);
+                currentDataset.clear();
+            }
+            continue;
+        }
+        if (line.find("data.") != string::npos) {
+            isSavingData = true;
+            taskCounter = 0;
+        } else {
+            if (isSavingData) {
+                if (taskCounter == 0) {
+                    taskCounter++;
+                    continue;
+                }
+                istringstream iss(line);
+                int num;
+                int totalTimes = 0;
+                vector<int> taskTimes;
+                while (iss >> num) {
+                    totalTimes += num;
+                    taskTimes.push_back(num);
+                }
+                currentDataset.push_back({taskCounter, taskTimes, totalTimes});
+                taskCounter++;
+            }
+        }
+    }
+    if (!currentDataset.empty()) {
+        allDatasets.push_back(currentDataset);
+    }
+
+    file.close();
+
+    int dataStart = 0;
+    int dataEnd = 120;
+    cout << "NEH Results" << endl;
+
+    chrono::duration<double> totalExecutionTime = chrono::duration<double>::zero();
+    for (int i = dataStart; i <= dataEnd; i++) {
+        cout << "data." << i << ": Cmax: ";
+        auto start = chrono::high_resolution_clock::now();
+        vector<int> result = basicNEH(allDatasets[i]);
+        auto end = chrono::high_resolution_clock::now();
+        chrono::duration<double> duration = end - start;
+
+        totalExecutionTime += duration;
+        cout << computeFinalCmax(allDatasets[i], result) << " ";
+        cout << "Czas: " << duration.count() << endl;
+    }
+    cout << "Czas dzialania programu NEH: " << totalExecutionTime.count() << " s" << endl;
+
+    cout << "QNEH Results" << endl;
+    totalExecutionTime = chrono::duration<double>::zero();
+    for (int i = dataStart; i <= dataEnd; i++) {
+        cout << "data." << i << ": Cmax: ";
+        auto start = chrono::high_resolution_clock::now();
+        vector<int> result = optimizedNEH(allDatasets[i]);
+        auto end = chrono::high_resolution_clock::now();
+        chrono::duration<double> duration = end - start;
+
+        totalExecutionTime += duration;
+        cout << computeFinalCmax(allDatasets[i], result) << " ";
+        cout << "Czas: " << duration.count() << endl;
+    }
+    cout << "Czas dzialania programu QNEH: " << totalExecutionTime.count() << " s" << endl;
 
     return 0;
 }
