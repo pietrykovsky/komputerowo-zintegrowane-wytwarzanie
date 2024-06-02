@@ -9,115 +9,127 @@
 
 using namespace std;
 
+
 struct Job {
     int jobId;
     vector<int> processingTimes;
     int totalProcessingTime;
 };
 
-vector<int> sortJobsByTotalTime(const vector<Job>& jobs) {
-    vector<Job> sortedJobs = jobs;
-    stable_sort(sortedJobs.begin(), sortedJobs.end(), [](const Job& a, const Job& b) {
+
+//sort jobs by total processing time
+vector<int> getSortedJobOrder(const vector<Job>& tasks) {
+    vector<Job> sortedTasks = tasks;
+    stable_sort(sortedTasks.begin(), sortedTasks.end(), [](const Job& a, const Job& b) {
         return a.totalProcessingTime > b.totalProcessingTime;
     });
 
     vector<int> jobOrder;
-
-    transform(sortedJobs.begin(), sortedJobs.end(), back_inserter(jobOrder), [](const Job& job) {
-        return job.jobId - 1;
+    transform(sortedTasks.begin(), sortedTasks.end(), back_inserter(jobOrder), [](const Job& task) {
+        return task.jobId - 1;
     });
 
     return jobOrder;
 }
 
-vector<int> extractColumn(const vector<vector<int>>& matrix, int col) {
-    int rows = matrix.size();
-    vector<int> column(rows, 0);
-    for (int i = 0; i < rows; ++i){
+
+//extract a column from a matrix
+vector<int> getColumn(const vector<vector<int>>& matrix, int col) {
+    int numRows = matrix.size();
+    vector<int> column(numRows, 0);
+    for (int i = 0; i < numRows; ++i) {
         column[i] = matrix[i][col];
     }
     return column;
 }
 
-void forwardPropagation(const vector<Job>& jobs, const vector<int>& jobOrder, vector<vector<int>>& forwardMatrix, int start = 0) {
-    int machines = jobs[0].processingTimes.size();
-    vector<int> previous(machines, 0);
-    if (start != 0){
-        previous = extractColumn(forwardMatrix, jobOrder[start-1]);
+
+//propagate times forward
+void propagateForward(const vector<Job>& tasks, const vector<int>& jobOrder, vector<vector<int>>& forwardMatrix, int start = 0) {
+    int numMachines = tasks[0].processingTimes.size();
+    vector<int> previous(numMachines, 0);
+    if (start != 0) {
+        previous = getColumn(forwardMatrix, jobOrder[start - 1]);
     }
     for (int i = start; i < jobOrder.size(); i++) {
         int time = 0;
-        for (int m = 0; m < machines; m++) {
-            time = max(time, previous[m]) + jobs[jobOrder[i]].processingTimes[m];
+        for (int m = 0; m < numMachines; m++) {
+            time = max(time, previous[m]) + tasks[jobOrder[i]].processingTimes[m];
             forwardMatrix[m][jobOrder[i]] = time;
             previous[m] = time;
         }
     }
 }
 
-void backwardPropagation(const vector<Job>& jobs, const vector<int>& jobOrder, vector<vector<int>>& backwardMatrix, int start = -1) {
-    if (jobOrder.size() == 0) {
+
+//propagate times backward
+void propagateBackward(const vector<Job>& tasks, const vector<int>& jobOrder, vector<vector<int>>& backwardMatrix, int start = -1) {
+    if (jobOrder.empty()) {
         return;
     }
-    int machines = jobs[0].processingTimes.size();
-    vector<int> previous(machines, 0);
-    if (start != jobOrder.size()-1){
-        previous = extractColumn(backwardMatrix, jobOrder[start+1]);
+    int numMachines = tasks[0].processingTimes.size();
+    vector<int> previous(numMachines, 0);
+    if (start != jobOrder.size() - 1) {
+        previous = getColumn(backwardMatrix, jobOrder[start + 1]);
     }
     for (int i = start; i >= 0; i--) {
         int time = 0;
-        for (int m = machines-1; m >= 0; m--) {
-            time = max(time, previous[m]) + jobs[jobOrder[i]].processingTimes[m];
+        for (int m = numMachines - 1; m >= 0; m--) {
+            time = max(time, previous[m]) + tasks[jobOrder[i]].processingTimes[m];
             backwardMatrix[m][jobOrder[i]] = time;
             previous[m] = time;
         }
     }
 }
 
-int computeCmax(const Job& job, const vector<vector<int>>& forwardMatrix, const vector<vector<int>>& backwardMatrix, int pos, const vector<int>& jobOrder) {
+
+//calculate Cmax
+int calculateCmax(const Job& task, const vector<vector<int>>& forwardMatrix, const vector<vector<int>>& backwardMatrix, int pos, const vector<int>& jobOrder) {
     int time = 0;
     int cmax = 0;
-    int totalJobs = jobOrder.size();
-    int machines = job.processingTimes.size();
-    vector<int> jobTimes(machines, 0);
+    int numJobs = jobOrder.size();
+    int numMachines = task.processingTimes.size();
+    vector<int> taskTimes(numMachines, 0);
     vector<int> previous;
-    if (pos != 0){
-        previous = extractColumn(forwardMatrix, jobOrder[pos-1]);
+    if (pos != 0) {
+        previous = getColumn(forwardMatrix, jobOrder[pos - 1]);
     } else {
-        previous = vector<int>(machines, 0);
+        previous = vector<int>(numMachines, 0);
     }
-    for (int m = 0; m < machines; m++) {
-        time = max(time, previous[m]) + job.processingTimes[m];
-        jobTimes[m] = time;
-        if (pos < totalJobs) {
-            int value = jobTimes[m] + backwardMatrix[m][jobOrder[pos]];
-            if (value > cmax){
+    for (int m = 0; m < numMachines; m++) {
+        time = max(time, previous[m]) + task.processingTimes[m];
+        taskTimes[m] = time;
+        if (pos < numJobs) {
+            int value = taskTimes[m] + backwardMatrix[m][jobOrder[pos]];
+            if (value > cmax) {
                 cmax = value;
             }
         }
     }
-    if (pos == totalJobs){
+    if (pos == numJobs) {
         return time;
-    } 
-    return cmax; 
+    }
+    return cmax;
 }
 
-vector<int> optimizedNEH(const vector<Job>& jobs) {
-    vector<int> initialOrder = sortJobsByTotalTime(jobs);
+
+// Optimized NEH algorithm
+vector<int> optimizedNEH(const vector<Job>& tasks) {
+    vector<int> initialOrder = getSortedJobOrder(tasks);
     vector<int> finalOrder;
-    int totalJobs = jobs.size();
-    int machines = jobs[0].processingTimes.size();
+    int numJobs = tasks.size();
+    int numMachines = tasks[0].processingTimes.size();
     int bestPos = 0;
-    vector<vector<int>> forwardMatrix(machines, vector<int>(totalJobs, 0));
-    vector<vector<int>> backwardMatrix(machines, vector<int>(totalJobs, 0)); 
+    vector<vector<int>> forwardMatrix(numMachines, vector<int>(numJobs, 0));
+    vector<vector<int>> backwardMatrix(numMachines, vector<int>(numJobs, 0));
 
     for (int jobIndex : initialOrder) {
         int currentJobs = finalOrder.size();
         int minCmax = numeric_limits<int>::max();
-        forwardPropagation(jobs, finalOrder, forwardMatrix, bestPos);
-        backwardPropagation(jobs, finalOrder, backwardMatrix, bestPos);
-        for (int i = 0; i < currentJobs + 1; i++){
-            int c = computeCmax(jobs[jobIndex], forwardMatrix, backwardMatrix, i, finalOrder);
+        propagateForward(tasks, finalOrder, forwardMatrix, bestPos);
+        propagateBackward(tasks, finalOrder, backwardMatrix, bestPos);
+        for (int i = 0; i < currentJobs + 1; i++) {
+            int c = calculateCmax(tasks[jobIndex], forwardMatrix, backwardMatrix, i, finalOrder);
             if (c < minCmax) {
                 minCmax = c;
                 bestPos = i;
@@ -128,14 +140,16 @@ vector<int> optimizedNEH(const vector<Job>& jobs) {
     return finalOrder;
 }
 
-int computeFinalCmax(const vector<Job>& jobs, const vector<int>& jobOrder) {
-    int machines = jobs[0].processingTimes.size();
+
+//compute final Cmax
+int finalCmax(const vector<Job>& tasks, const vector<int>& jobOrder) {
+    int numMachines = tasks[0].processingTimes.size();
     int cmax = 0;
-    vector<int> previous(machines, 0);
+    vector<int> previous(numMachines, 0);
     for (int jobIndex : jobOrder) {
         int time = 0;
-        for (int m = 0; m < machines; m++) {
-            time = max(time, previous[m]) + jobs[jobIndex].processingTimes[m];
+        for (int m = 0; m < numMachines; m++) {
+            time = max(time, previous[m]) + tasks[jobIndex].processingTimes[m];
             previous[m] = time;
             cmax = time;
         }
@@ -143,11 +157,13 @@ int computeFinalCmax(const vector<Job>& jobs, const vector<int>& jobOrder) {
     return cmax;
 }
 
-vector<int> basicNEH(const vector<Job>& jobs) {
-    vector<int> initialOrder = sortJobsByTotalTime(jobs);
+
+// Basic NEH algorithm
+vector<int> basicNEH(const vector<Job>& tasks) {
+    vector<int> initialOrder = getSortedJobOrder(tasks);
     vector<int> finalOrder;
-    int totalJobs = jobs.size();
-    int machines = jobs[0].processingTimes.size();
+    int numJobs = tasks.size();
+    int numMachines = tasks[0].processingTimes.size();
     int bestPos = 0;
 
     for (int jobIndex : initialOrder) {
@@ -156,7 +172,7 @@ vector<int> basicNEH(const vector<Job>& jobs) {
         for (int i = 0; i < currentJobs + 1; i++) {
             vector<int> newOrder = finalOrder;
             newOrder.insert(newOrder.begin() + i, jobIndex);
-            int c = computeFinalCmax(jobs, newOrder);
+            int c = finalCmax(tasks, newOrder);
             if (c < minCmax) {
                 minCmax = c;
                 bestPos = i;
@@ -167,14 +183,15 @@ vector<int> basicNEH(const vector<Job>& jobs) {
     return finalOrder;
 }
 
+
 int main() {
     string filePath = "neh.data.txt";
     ifstream file(filePath);
-    vector<vector<Job>> allDatasets;
+    vector<vector<Job>> datasets;
     string line;
 
     if (!file.is_open()) {
-        cerr << "Failed to open file: " << filePath << endl;
+        cerr << "Error: Cannot open file: " << filePath << endl;
         return 1;
     }
 
@@ -186,7 +203,7 @@ int main() {
         if (line.empty()) {
             isSavingData = false;
             if (!currentDataset.empty()) {
-                allDatasets.push_back(currentDataset);
+                datasets.push_back(currentDataset);
                 currentDataset.clear();
             }
             continue;
@@ -214,43 +231,43 @@ int main() {
         }
     }
     if (!currentDataset.empty()) {
-        allDatasets.push_back(currentDataset);
+        datasets.push_back(currentDataset);
     }
 
     file.close();
 
     int dataStart = 0;
     int dataEnd = 120;
-    cout << "NEH Results" << endl;
+    cout << "Results for NEH" << endl;
 
     chrono::duration<double> totalExecutionTime = chrono::duration<double>::zero();
     for (int i = dataStart; i <= dataEnd; i++) {
         cout << "data." << i << ": Cmax: ";
         auto start = chrono::high_resolution_clock::now();
-        vector<int> result = basicNEH(allDatasets[i]);
+        vector<int> result = basicNEH(datasets[i]);
         auto end = chrono::high_resolution_clock::now();
         chrono::duration<double> duration = end - start;
 
         totalExecutionTime += duration;
-        cout << computeFinalCmax(allDatasets[i], result) << " ";
-        cout << "Czas: " << duration.count() << endl;
+        cout << finalCmax(datasets[i], result) << " ";
+        cout << "Execution Time: " << duration.count() << " seconds" << endl;
     }
-    cout << "Czas dzialania programu NEH: " << totalExecutionTime.count() << " s" << endl;
+    cout << "Total execution time for NEH: " << totalExecutionTime.count() << " seconds" << endl;
 
-    cout << "QNEH Results" << endl;
+    cout << "Results for Optimized NEH (QNEH)" << endl;
     totalExecutionTime = chrono::duration<double>::zero();
     for (int i = dataStart; i <= dataEnd; i++) {
         cout << "data." << i << ": Cmax: ";
         auto start = chrono::high_resolution_clock::now();
-        vector<int> result = optimizedNEH(allDatasets[i]);
+        vector<int> result = optimizedNEH(datasets[i]);
         auto end = chrono::high_resolution_clock::now();
         chrono::duration<double> duration = end - start;
 
         totalExecutionTime += duration;
-        cout << computeFinalCmax(allDatasets[i], result) << " ";
-        cout << "Czas: " << duration.count() << endl;
+        cout << finalCmax(datasets[i], result) << " ";
+        cout << "Execution Time: " << duration.count() << " seconds" << endl;
     }
-    cout << "Czas dzialania programu QNEH: " << totalExecutionTime.count() << " s" << endl;
+    cout << "Total execution time for QNEH: " << totalExecutionTime.count() << " seconds" << endl;
 
     return 0;
 }
